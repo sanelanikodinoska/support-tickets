@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Support Tickets — Powered by Lakebase</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .message-bubble { animation: fadeIn .25s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    .ticket-card { transition: background .15s, border-color .15s; }
+    .ticket-card:hover { background:#f0f9ff; }
+    .ticket-card.selected { background:#e0f2fe; border-left-color:#0284c7; }
+    ::-webkit-scrollbar { width:6px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
+  </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 h-screen flex flex-col overflow-hidden"
+  x-data="app()" x-init="init()" x-cloak>
+
+<!-- ═══════════════════ TOAST ═══════════════════ -->
+<div class="fixed top-4 right-4 z-50 flex flex-col gap-2" style="min-width:260px">
+  <template x-if="toast.show">
+    <div class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium"
+      :class="toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'">
+      <span x-text="toast.type === 'error' ? '✕' : '✓'" class="text-base font-bold"></span>
+      <span x-text="toast.message"></span>
+    </div>
+  </template>
+</div>
+
+<!-- ═══════════════════ NAVBAR ═══════════════════ -->
+<header class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0 shadow-sm">
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">ST</div>
+    <div>
+      <h1 class="font-semibold text-slate-900 leading-tight">Support Tickets</h1>
+      <p class="text-xs text-slate-400 leading-tight">Powered by Databricks Lakebase</p>
+    </div>
+  </div>
+  <button @click="openCreateModal()"
+    class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm">
+    <span class="text-lg leading-none">+</span> New Ticket
+  </button>
+</header>
+
+<!-- ═══════════════════ STATS BAR ═══════════════════ -->
+<div class="bg-white border-b border-slate-200 px-6 py-3 flex gap-4 flex-shrink-0">
+  <template x-if="stats.total !== undefined">
+    <div class="flex gap-3 flex-wrap">
+      <div class="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-lg text-sm">
+        <span class="font-semibold text-slate-700" x-text="stats.total"></span>
+        <span class="text-slate-500">Total</span>
+      </div>
+      <div class="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg text-sm">
+        <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+        <span class="font-semibold text-blue-700" x-text="stats.open"></span>
+        <span class="text-blue-600">Open</span>
+      </div>
+      <div class="flex items-center gap-2 bg-amber-50 px-3 py-1.5 rounded-lg text-sm">
+        <span class="w-2 h-2 bg-amber-500 rounded-full"></span>
+        <span class="font-semibold text-amber-700" x-text="stats.in_progress"></span>
+        <span class="text-amber-600">In Progress</span>
+      </div>
+      <div class="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg text-sm">
+        <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+        <span class="font-semibold text-emerald-700" x-text="stats.resolved"></span>
+        <span class="text-emerald-600">Resolved</span>
+      </div>
+      <div class="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-lg text-sm">
+        <span class="w-2 h-2 bg-slate-400 rounded-full"></span>
+        <span class="font-semibold text-slate-600" x-text="stats.closed"></span>
+        <span class="text-slate-500">Closed</span>
+      </div>
+      <div class="flex items-center gap-2 bg-red-50 px-3 py-1.5 rounded-lg text-sm" x-show="stats.critical > 0">
+        <span class="text-red-600 font-bold">!</span>
+        <span class="font-semibold text-red-700" x-text="stats.critical"></span>
+        <span class="text-red-600">Critical</span>
+      </div>
+    </div>
+  </template>
+  <template x-if="stats.total === undefined">
+    <div class="text-sm text-slate-400 animate-pulse">Loading stats…</div>
+  </template>
+</div>
+
+<!-- ═══════════════════ MAIN LAYOUT ═══════════════════ -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- ─── LEFT: Ticket List ─────────────────────────────────────────── -->
+  <aside class="w-96 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-hidden">
+
+    <!-- Filters -->
+    <div class="px-4 py-3 border-b border-slate-100 space-y-2 flex-shrink-0">
+      <input
+        type="text"
+        placeholder="Search tickets…"
+        x-model="searchQuery"
+        class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+      />
+      <div class="flex gap-2">
+        <select x-model="filterStatus" class="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+          <option value="">All statuses</option>
+          <option value="open">Open</option>
+          <option value="in_progress">In Progress</option>
+          <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
+        </select>
+        <select x-model="filterCategory" class="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+          <option value="">All categories</option>
+          <option value="general">📋 General</option>
+          <option value="billing">💰 Billing</option>
+          <option value="technical">🔧 Technical</option>
+          <option value="feature_request">✨ Feature Request</option>
+          <option value="bug">🐛 Bug</option>
+        </select>
+        <select x-model="filterPriority" class="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+          <option value="">All priorities</option>
+          <option value="critical">🔴 Critical</option>
+          <option value="high">🟠 High</option>
+          <option value="medium">🔵 Medium</option>
+          <option value="low">⚪ Low</option>
+        </select>
+      </div>
+      <div class="flex items-center justify-between text-xs text-slate-400">
+        <span x-text="`${filteredTickets.length} ticket${filteredTickets.length !== 1 ? 's' : ''}`"></span>
+        <button @click="clearFilters()" x-show="filterStatus || filterCategory || filterPriority || searchQuery"
+          class="text-blue-500 hover:text-blue-700 font-medium">Clear filters</button>
+      </div>
+    </div>
+
+    <!-- Ticket list -->
+    <div class="flex-1 overflow-y-auto">
+      <!-- Loading -->
+      <div x-show="loading" class="flex items-center justify-center h-24 text-slate-400 text-sm animate-pulse">
+        Loading…
+      </div>
+
+      <!-- Empty state -->
+      <div x-show="!loading && filteredTickets.length === 0"
+        class="flex flex-col items-center justify-center h-40 text-slate-400 text-sm gap-2">
+        <span class="text-3xl">🎫</span>
+        <span>No tickets found</span>
+      </div>
+
+      <!-- Cards -->
+      <template x-for="ticket in filteredTickets" :key="ticket.ticket_id">
+        <div class="ticket-card border-l-4 px-4 py-3 cursor-pointer border-b border-slate-100"
+          :class="[
+            selectedTicket && selectedTicket.ticket_id === ticket.ticket_id ? 'selected' : '',
+            ticket.priority === 'critical' ? 'border-l-red-500' :
+            ticket.priority === 'high'     ? 'border-l-orange-400' :
+            ticket.priority === 'medium'   ? 'border-l-blue-400' :
+                                             'border-l-slate-200'
+          ]"
+          @click="selectTicket(ticket.ticket_id)">
+
+          <!-- Title + status -->
+          <div class="flex items-start justify-between gap-2 mb-1">
+            <span class="text-sm font-medium text-slate-800 leading-snug line-clamp-2" x-text="ticket.title"></span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+              :class="statusBadge(ticket.status)"
+              x-text="ticket.status.replace('_',' ')"></span>
+          </div>
+
+          <!-- Meta row -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-400" x-text="categoryEmoji(ticket.category) + ' ' + ticket.category.replace('_',' ')"></span>
+            <span class="text-xs px-1.5 py-0.5 rounded font-medium" :class="priorityBadge(ticket.priority)" x-text="ticket.priority"></span>
+            <span class="text-xs text-slate-400 ml-auto flex items-center gap-1">
+              <span>💬</span><span x-text="ticket.message_count"></span>
+            </span>
+          </div>
+
+          <div class="text-xs text-slate-400 mt-1 truncate" x-text="ticket.created_by"></div>
+        </div>
+      </template>
+    </div>
+  </aside>
+
+  <!-- ─── RIGHT: Ticket Detail ──────────────────────────────────────── -->
+  <main class="flex-1 overflow-hidden flex flex-col bg-slate-50">
+
+    <!-- Empty / no selection -->
+    <div x-show="!selectedTicket && !loadingDetail"
+      class="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
+      <span class="text-6xl">🎫</span>
+      <p class="text-lg font-medium">Select a ticket to view details</p>
+      <p class="text-sm">or <button @click="openCreateModal()" class="text-blue-500 hover:underline">create a new one</button></p>
+    </div>
+
+    <!-- Loading detail -->
+    <div x-show="loadingDetail"
+      class="flex-1 flex items-center justify-center text-slate-400 text-sm animate-pulse">
+      Loading…
+    </div>
+
+    <!-- Detail view -->
+    <div x-show="selectedTicket && !loadingDetail" class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Ticket header -->
+      <div class="bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs text-slate-400 font-mono" x-text="'#' + selectedTicket?.ticket_id"></span>
+              <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="statusBadge(selectedTicket?.status)"
+                x-text="(selectedTicket?.status||'').replace('_',' ')"></span>
+              <span class="text-xs px-2 py-0.5 rounded font-medium" :class="priorityBadge(selectedTicket?.priority)"
+                x-text="selectedTicket?.priority"></span>
+            </div>
+            <h2 class="text-xl font-semibold text-slate-900 leading-snug" x-text="selectedTicket?.title"></h2>
+            <p class="text-sm text-slate-500 mt-1"
+              x-text="categoryEmoji(selectedTicket?.category) + ' ' + (selectedTicket?.category||'').replace('_',' ')
+                      + '  ·  by ' + selectedTicket?.created_by
+                      + '  ·  ' + formatDate(selectedTicket?.created_at)"></p>
+            <p class="text-sm text-slate-700 mt-2 leading-relaxed" x-text="selectedTicket?.description" x-show="selectedTicket?.description"></p>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-start gap-2 flex-shrink-0">
+            <button @click="confirmDeleteTicket(selectedTicket)"
+              class="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg transition-colors">
+              🗑 Delete
+            </button>
+          </div>
+        </div>
+
+        <!-- Inline field editors -->
+        <div class="flex gap-3 mt-3 flex-wrap">
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-400">Status</label>
+            <select class="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+              :value="selectedTicket?.status"
+              @change="updateField('status', $event.target.value)">
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-400">Priority</label>
+            <select class="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+              :value="selectedTicket?.priority"
+              @change="updateField('priority', $event.target.value)">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-400">Category</label>
+            <select class="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+              :value="selectedTicket?.category"
+              @change="updateField('category', $event.target.value)">
+              <option value="general">📋 General</option>
+              <option value="billing">💰 Billing</option>
+              <option value="technical">🔧 Technical</option>
+              <option value="feature_request">✨ Feature Request</option>
+              <option value="bug">🐛 Bug</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Messages thread -->
+      <div class="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+
+        <div x-show="selectedTicket?.messages?.length === 0"
+          class="text-center text-slate-400 text-sm py-8">No messages yet — add the first one below.</div>
+
+        <template x-for="msg in selectedTicket?.messages || []" :key="msg.message_id">
+          <div class="message-bubble bg-white rounded-xl px-4 py-3 shadow-sm border border-slate-100">
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center"
+                  x-text="(msg.author||'?')[0].toUpperCase()"></div>
+                <span class="text-sm font-medium text-slate-700" x-text="msg.author"></span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-slate-400" x-text="formatDate(msg.created_at)"></span>
+                <button @click="deleteMessage(msg.message_id)"
+                  class="text-xs text-slate-300 hover:text-red-500 transition-colors" title="Delete message">✕</button>
+              </div>
+            </div>
+            <p class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap" x-text="msg.message_text"></p>
+          </div>
+        </template>
+      </div>
+
+      <!-- Add message form -->
+      <div class="bg-white border-t border-slate-200 px-6 py-4 flex-shrink-0">
+        <div class="space-y-2">
+          <div class="flex gap-2">
+            <div class="flex-1">
+              <textarea
+                x-model="newMessage.message_text"
+                placeholder="Write a message…"
+                rows="2"
+                class="w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                :class="formErrors.message_text ? 'border-red-400' : 'border-slate-200'"
+                @keydown.ctrl.enter="addMessage()"
+              ></textarea>
+              <p x-show="formErrors.message_text" class="text-xs text-red-500 mt-0.5" x-text="formErrors.message_text"></p>
+            </div>
+            <button @click="addMessage()" :disabled="submitting"
+              class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 rounded-lg transition-colors flex-shrink-0">
+              Send
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <input
+              x-model="newMessage.author"
+              placeholder="Your name or email"
+              class="text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1"
+              :class="formErrors.author ? 'border-red-400' : 'border-slate-200'"
+            />
+            <span class="text-xs text-slate-400">Ctrl+Enter to send</span>
+          </div>
+          <p x-show="formErrors.author" class="text-xs text-red-500" x-text="formErrors.author"></p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════ CREATE TICKET MODAL ═══════════════════ -->
+<div x-show="showCreateModal"
+  class="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 flex items-center justify-center p-4"
+  @click.self="showCreateModal = false">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6" @click.stop>
+
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-lg font-semibold text-slate-900">New Support Ticket</h3>
+      <button @click="showCreateModal = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+    </div>
+
+    <div class="space-y-4">
+
+      <!-- Title -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Title <span class="text-red-500">*</span></label>
+        <input x-model="newTicket.title" type="text" placeholder="Brief description of the issue"
+          class="w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          :class="formErrors.title ? 'border-red-400' : 'border-slate-200'" />
+        <p x-show="formErrors.title" class="text-xs text-red-500 mt-1" x-text="formErrors.title"></p>
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+        <textarea x-model="newTicket.description" placeholder="More details about the issue (optional)" rows="3"
+          class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea>
+      </div>
+
+      <!-- Row: Priority + Category -->
+      <div class="flex gap-3">
+        <div class="flex-1">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Priority</label>
+          <select x-model="newTicket.priority"
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="flex-1">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+          <select x-model="newTicket.category"
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+            <option value="general">📋 General</option>
+            <option value="billing">💰 Billing</option>
+            <option value="technical">🔧 Technical</option>
+            <option value="feature_request">✨ Feature Request</option>
+            <option value="bug">🐛 Bug</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row: Status + Created By -->
+      <div class="flex gap-3">
+        <div class="flex-1">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Initial Status</label>
+          <select x-model="newTicket.status"
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+          </select>
+        </div>
+        <div class="flex-1">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Your name / email <span class="text-red-500">*</span></label>
+          <input x-model="newTicket.created_by" type="text" placeholder="you@example.com"
+            class="w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            :class="formErrors.created_by ? 'border-red-400' : 'border-slate-200'" />
+          <p x-show="formErrors.created_by" class="text-xs text-red-500 mt-1" x-text="formErrors.created_by"></p>
+        </div>
+      </div>
+
+      <!-- General error -->
+      <p x-show="formErrors._" class="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2" x-text="formErrors._"></p>
+    </div>
+
+    <div class="flex justify-end gap-3 mt-6">
+      <button @click="showCreateModal = false"
+        class="text-sm text-slate-600 hover:text-slate-900 px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
+        Cancel
+      </button>
+      <button @click="createTicket()" :disabled="submitting"
+        class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
+        <span x-text="submitting ? 'Creating…' : 'Create Ticket'"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ DELETE CONFIRMATION MODAL ═══════════════════ -->
+<div x-show="showDeleteModal"
+  class="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 flex items-center justify-center p-4"
+  @click.self="showDeleteModal = false">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" @click.stop>
+    <div class="text-center mb-5">
+      <div class="text-4xl mb-3">🗑️</div>
+      <h3 class="text-lg font-semibold text-slate-900 mb-2">Delete Ticket?</h3>
+      <p class="text-sm text-slate-500">
+        This will permanently delete
+        <span class="font-medium text-slate-800" x-text="`"${ticketToDelete?.title}"`"></span>
+        and all its messages. This cannot be undone.
+      </p>
+    </div>
+    <div class="flex gap-3">
+      <button @click="showDeleteModal = false"
+        class="flex-1 text-sm text-slate-600 hover:text-slate-900 px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
+        Cancel
+      </button>
+      <button @click="deleteTicket()"
+        class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+        Yes, Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ APP LOGIC ═══════════════════ -->
+<script>
+function app() {
+  return {
+    // ── State ──────────────────────────────────────────────────────────────
+    stats: {},
+    tickets: [],
+    selectedTicket: null,
+    loading: false,
+    loadingDetail: false,
+    submitting: false,
+
+    // Filters
+    searchQuery: '',
+    filterStatus: '',
+    filterCategory: '',
+    filterPriority: '',
+
+    // Forms
+    newTicket: {
+      title: '', description: '', created_by: '',
+      status: 'open', priority: 'medium', category: 'general'
+    },
+    newMessage: { message_text: '', author: '' },
+
+    // UI
+    showCreateModal: false,
+    showDeleteModal: false,
+    ticketToDelete: null,
+    formErrors: {},
+    toast: { show: false, message: '', type: 'success' },
+
+    // ── Computed ───────────────────────────────────────────────────────────
+    get filteredTickets() {
+      return this.tickets.filter(t => {
+        if (this.filterStatus   && t.status   !== this.filterStatus)   return false;
+        if (this.filterCategory && t.category !== this.filterCategory) return false;
+        if (this.filterPriority && t.priority !== this.filterPriority) return false;
+        if (this.searchQuery) {
+          const q = this.searchQuery.toLowerCase();
+          return (t.title      || '').toLowerCase().includes(q)
+              || (t.created_by || '').toLowerCase().includes(q)
+              || (t.description|| '').toLowerCase().includes(q);
+        }
+        return true;
+      });
+    },
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────
+    async init() {
+      await Promise.all([this.loadStats(), this.loadTickets()]);
+    },
+
+    // ── Data fetching ──────────────────────────────────────────────────────
+    async loadStats() {
+      try {
+        const r = await fetch('/api/stats');
+        this.stats = await r.json();
+      } catch(e) { console.error('Stats load failed', e); }
+    },
+
+    async loadTickets() {
+      this.loading = true;
+      try {
+        const r = await fetch('/api/tickets');
+        this.tickets = await r.json();
+      } catch(e) {
+        this.showToast('Failed to load tickets.', 'error');
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async selectTicket(id) {
+      this.loadingDetail = true;
+      this.formErrors = {};
+      try {
+        const r = await fetch(`/api/tickets/${id}`);
+        if (!r.ok) { this.showToast('Ticket not found.', 'error'); return; }
+        this.selectedTicket = await r.json();
+      } catch(e) {
+        this.showToast('Failed to load ticket.', 'error');
+      } finally {
+        this.loadingDetail = false;
+      }
+    },
+
+    // ── Create ticket ──────────────────────────────────────────────────────
+    async createTicket() {
+      this.submitting = true;
+      this.formErrors = {};
+      try {
+        const r = await fetch('/api/tickets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.newTicket)
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          this.formErrors = data.details || { _: data.error };
+          return;
+        }
+        this.showCreateModal = false;
+        this.newTicket = { title: '', description: '', created_by: '', status: 'open', priority: 'medium', category: 'general' };
+        await Promise.all([this.loadTickets(), this.loadStats()]);
+        await this.selectTicket(data.ticket_id);
+        this.showToast('Ticket created successfully!', 'success');
+      } catch(e) {
+        this.formErrors = { _: 'Something went wrong. Please try again.' };
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    // ── Update ticket field ────────────────────────────────────────────────
+    async updateField(field, value) {
+      if (!this.selectedTicket) return;
+      try {
+        const r = await fetch(`/api/tickets/${this.selectedTicket.ticket_id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: value })
+        });
+        const data = await r.json();
+        if (!r.ok) { this.showToast(data.error || 'Update failed.', 'error'); return; }
+        this.selectedTicket = { ...this.selectedTicket, ...data };
+        await Promise.all([this.loadTickets(), this.loadStats()]);
+        this.showToast('Updated!', 'success');
+      } catch(e) {
+        this.showToast('Update failed.', 'error');
+      }
+    },
+
+    // ── Delete ticket ──────────────────────────────────────────────────────
+    confirmDeleteTicket(ticket) {
+      this.ticketToDelete = ticket;
+      this.showDeleteModal = true;
+    },
+
+    async deleteTicket() {
+      if (!this.ticketToDelete) return;
+      try {
+        const r = await fetch(`/api/tickets/${this.ticketToDelete.ticket_id}`, { method: 'DELETE' });
+        if (!r.ok) { this.showToast('Delete failed.', 'error'); return; }
+        this.showDeleteModal = false;
+        if (this.selectedTicket?.ticket_id === this.ticketToDelete.ticket_id) {
+          this.selectedTicket = null;
+        }
+        this.ticketToDelete = null;
+        await Promise.all([this.loadTickets(), this.loadStats()]);
+        this.showToast('Ticket deleted.', 'success');
+      } catch(e) {
+        this.showToast('Delete failed.', 'error');
+      }
+    },
+
+    // ── Add message ────────────────────────────────────────────────────────
+    async addMessage() {
+      if (!this.selectedTicket) return;
+      this.submitting = true;
+      this.formErrors = {};
+      try {
+        const r = await fetch(`/api/tickets/${this.selectedTicket.ticket_id}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.newMessage)
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          this.formErrors = data.details || { _: data.error };
+          return;
+        }
+        const savedAuthor = this.newMessage.author; // persist author across sends
+        this.newMessage = { message_text: '', author: savedAuthor };
+        await this.selectTicket(this.selectedTicket.ticket_id);
+        await this.loadTickets();
+        this.showToast('Message sent!', 'success');
+      } catch(e) {
+        this.formErrors = { _: 'Failed to send message.' };
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    // ── Delete message ─────────────────────────────────────────────────────
+    async deleteMessage(messageId) {
+      try {
+        const r = await fetch(`/api/messages/${messageId}`, { method: 'DELETE' });
+        if (!r.ok) { this.showToast('Delete failed.', 'error'); return; }
+        if (this.selectedTicket) {
+          this.selectedTicket = {
+            ...this.selectedTicket,
+            messages: this.selectedTicket.messages.filter(m => m.message_id !== messageId),
+            message_count: (this.selectedTicket.message_count || 1) - 1
+          };
+        }
+        await this.loadTickets();
+        this.showToast('Message deleted.', 'success');
+      } catch(e) {
+        this.showToast('Delete failed.', 'error');
+      }
+    },
+
+    // ── UI helpers ─────────────────────────────────────────────────────────
+    openCreateModal() {
+      this.formErrors = {};
+      this.showCreateModal = true;
+    },
+
+    clearFilters() {
+      this.filterStatus = '';
+      this.filterCategory = '';
+      this.filterPriority = '';
+      this.searchQuery = '';
+    },
+
+    showToast(message, type = 'success') {
+      this.toast = { show: true, message, type };
+      setTimeout(() => { this.toast.show = false; }, 3000);
+    },
+
+    statusBadge(status) {
+      return {
+        open:        'bg-blue-100 text-blue-700',
+        in_progress: 'bg-amber-100 text-amber-700',
+        resolved:    'bg-emerald-100 text-emerald-700',
+        closed:      'bg-slate-100 text-slate-500',
+      }[status] || 'bg-slate-100 text-slate-500';
+    },
+
+    priorityBadge(priority) {
+      return {
+        critical: 'bg-red-100 text-red-700',
+        high:     'bg-orange-100 text-orange-700',
+        medium:   'bg-blue-100 text-blue-700',
+        low:      'bg-slate-100 text-slate-500',
+      }[priority] || 'bg-slate-100 text-slate-500';
+    },
+
+    categoryEmoji(category) {
+      return { general:'📋', billing:'💰', technical:'🔧', feature_request:'✨', bug:'🐛' }[category] || '📋';
+    },
+
+    formatDate(ts) {
+      if (!ts) return '';
+      return new Date(ts).toLocaleString(undefined, {
+        month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'
+      });
+    },
+  };
+}
+</script>
+</body>
+</html>
