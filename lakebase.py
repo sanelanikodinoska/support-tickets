@@ -28,17 +28,32 @@ def _lakebase_url() -> str:
     """Resolve the Lakebase connection URL.
 
     Priority:
-    1. LAKEBASE_URL env var  (local dev / .env)
-    2. Databricks secret scope  (production on Databricks Apps)
+    1. DATABRICKS_POSTGRES_CONNECTION_STRING_DATABASE (Apps V2 resource)
+    2. LAKEBASE_URL env var  (local dev / .env)
+    3. Databricks secret scope  (notebook testing)
     """
+    # Apps V2: When you configure a 'database' resource in app.yaml,
+    # Databricks automatically injects this environment variable
+    url = os.environ.get("DATABRICKS_POSTGRES_CONNECTION_STRING_DATABASE")
+    if url:
+        return url
+    
+    # Local dev: .env file
     url = os.environ.get("LAKEBASE_URL")
     if url:
         return url
 
-    from databricks.sdk import WorkspaceClient
-    _w = WorkspaceClient()
-    secret = _w.secrets.get_secret(scope=_SCOPE, key=_KEY)
-    return base64.b64decode(secret.value).decode("utf-8")
+    # Notebook testing: Databricks secrets
+    try:
+        from databricks.sdk import WorkspaceClient
+        _w = WorkspaceClient()
+        secret = _w.secrets.get_secret(scope=_SCOPE, key=_KEY)
+        return base64.b64decode(secret.value).decode("utf-8")
+    except Exception as e:
+        raise RuntimeError(
+            "No Lakebase connection found. In Apps V2, ensure app.yaml has a 'database' resource. "
+            f"For local dev, set LAKEBASE_URL in .env. Error: {e}"
+        )
 
 
 @contextmanager
