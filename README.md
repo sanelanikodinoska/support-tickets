@@ -2,6 +2,8 @@
 
 A full-stack internal support ticketing system built on **Databricks Apps** with **Lakebase (managed Postgres)** as the production data store. Built as Day 1 homework for the Zach Wilson AI Data Engineer Bootcamp.
 
+## ![Support-tickets-app_1786043770210.png](./Support-tickets-app_1786043770210.png "Support-tickets-app_1786043770210.png")
+
 ## Features
 
 - View, create, update, and delete support tickets
