@@ -39,6 +39,12 @@
     <div>
       <h1 class="font-semibold text-slate-900 leading-tight">Support Tickets</h1>
       <p class="text-xs text-slate-400 leading-tight">Powered by Databricks Lakebase</p>
+      {% if databricks_app_url %}
+      <a href="{{ databricks_app_url }}" target="_blank" rel="noopener noreferrer"
+        class="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline">
+        Open Databricks app
+      </a>
+      {% endif %}
     </div>
   </div>
   <button @click="openCreateModal()"

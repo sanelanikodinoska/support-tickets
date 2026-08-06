@@ -4,6 +4,8 @@ A full-stack internal support ticketing system built on **Databricks Apps** with
 
 ## ![Support-tickets-app_1786043770210.png](./Support-tickets-app_1786043770210.png "Support-tickets-app_1786043770210.png")
 
+Databricks App Link: [Support Tickets — Powered by Lakebase](https://support-tickets-app-7474643859693768.aws.databricksapps.com/)
+
 ## Features
 
 - View, create, update, and delete support tickets

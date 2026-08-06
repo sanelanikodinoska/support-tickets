@@ -60,7 +60,8 @@ def healthz():
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    databricks_app_url = os.getenv("DATABRICKS_APP_URL", "").strip()
+    return render_template("index.html", databricks_app_url=databricks_app_url)
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
